@@ -74,7 +74,7 @@ Documentation:
 
 ## 4. Deploy the frontend on Vercel
 
-The application is prepared locally. Push to a new GitHub repository and deploy only after the owner's confirmation.
+Production frontend: [EdgeLog](https://edgelog-iota-six.vercel.app). Source: [Ritesh17rb/edgelog](https://github.com/Ritesh17rb/edgelog) (private). The Vercel project is connected to the repository's `main` branch with `frontend` as its root directory.
 
 When ready, import the new repository into Vercel with these settings:
 

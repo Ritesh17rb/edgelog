@@ -2,6 +2,19 @@
 
 This first version connects one Zerodha Personal app to one authorised Supabase user. It imports today's executions into a review inbox and creates journal trades only after the user selects a complete position and confirms net P&L. It does not place orders, fetch paid market data, provide historic trade-book backfill, or manage broker alerts yet. Existing Markets charts and price alerts continue independently.
 
+## EdgeLog production domain
+
+The frontend is deployed at `https://edgelog-iota-six.vercel.app`.
+
+For production broker login, set these two values in Supabase Edge Function secrets:
+
+- `APP_ORIGIN=https://edgelog-iota-six.vercel.app`
+- `ZERODHA_REDIRECT_URL=https://edgelog-iota-six.vercel.app/dashboard/integrations/zerodha/callback`
+
+Set the identical redirect URL in your Kite app. The deployed function currently rejects this origin; these remote settings still need updating. Keep broker credentials server-side. Local `.env.local` values remain unchanged for local development.
+
+For password recovery, set Supabase Authentication's Site URL to the production origin and allow `https://edgelog-iota-six.vercel.app/reset-password` in its redirect URLs. Existing remote auth URL settings have not been verified.
+
 ## 1. Database
 
 In Supabase SQL Editor, create a new query and run **the entire** `supabase/migrations/003_zerodha.sql` file once. Migrations 001 and 002 should already have been applied. RLS is included in the SQL; do not disable it. The migration is transactional and additive. It is not intended to be run repeatedly after it succeeds.
