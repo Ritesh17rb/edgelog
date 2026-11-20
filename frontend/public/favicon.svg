@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <title>EdgeLog</title>
+  <rect width="40" height="40" rx="12" fill="#7965d9"/>
+  <path d="M27 11H13v18h14M13 20h11" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

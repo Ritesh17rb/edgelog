@@ -1,0 +1,5 @@
+@import "tailwindcss" source(none);
+@source inline("sr-only");
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}

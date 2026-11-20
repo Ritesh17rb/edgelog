@@ -1,0 +1,44 @@
+const express = require('express');
+const router = express.Router();
+const {
+  createTrade,
+  getTrades,
+  getTradeStats,
+  getTradeById,
+  updateTrade,
+  deleteTrade,
+  getPublicTrades,
+  parseTradeImage
+} = require('../controllers/tradeController');
+const { protect } = require('../middleware/authMiddleware');
+const upload = require('../middleware/uploadMiddleware');
+const multer = require('multer');
+
+const memUpload = multer({ storage: multer.memoryStorage() });
+
+// Define fields for multer
+const cpUpload = upload.fields([
+  { name: 'screenshotHTF', maxCount: 1 },
+  { name: 'screenshotMTF', maxCount: 1 },
+  { name: 'screenshotLTF', maxCount: 1 }
+]);
+
+// Public route (must be before /:id so 'public' isn't treated as an ID)
+router.route('/public').get(getPublicTrades);
+
+router.route('/parse-image')
+  .post(protect, memUpload.single('tradeScreenshot'), parseTradeImage);
+
+router.route('/')
+  .post(protect, cpUpload, createTrade)
+  .get(protect, getTrades);
+
+router.route('/stats')
+  .get(protect, getTradeStats);
+
+router.route('/:id')
+  .get(protect, getTradeById)
+  .put(protect, cpUpload, updateTrade)
+  .delete(protect, deleteTrade);
+
+module.exports = router;

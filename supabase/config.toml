@@ -1,0 +1,6 @@
+project_id = "trade-journal"
+
+[functions.zerodha]
+# The handler verifies the user's bearer token with Supabase Auth on EVERY request.
+# This accommodates projects using the new publishable keys/JWT signing keys.
+verify_jwt = false
