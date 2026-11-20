@@ -1,10 +1,19 @@
-import { db, currentUser, unwrap } from "../lib/supabase";
+import {
+  db,
+  currentUser,
+  unwrap,
+  supabaseUrl,
+  supabasePublishableKey,
+} from "../lib/supabase";
 export const userView = (user) =>
   user
     ? {
         ...user,
         _id: user.id,
-        name: user.user_metadata?.name || user.email?.split("@")[0],
+        name:
+          user.user_metadata?.name ||
+          user.user_metadata?.full_name ||
+          user.email?.split("@")[0],
       }
     : null;
 export default {
@@ -14,6 +23,34 @@ export default {
   async login(email, password) {
     return userView(
       unwrap(await db().auth.signInWithPassword({ email, password })).user,
+    );
+  },
+  async loginWithGoogle() {
+    const client = db();
+    const response = await fetch(
+      `${supabaseUrl.replace(/\/$/, "")}/auth/v1/settings`,
+      {
+        headers: { apikey: supabasePublishableKey },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    if (!response.ok)
+      throw new Error(
+        "Google sign-in is unavailable right now. Please try again or sign in with email.",
+      );
+    const settings = await response.json();
+    if (!settings.external?.google)
+      throw new Error(
+        "Google sign-in isn't available yet. Please sign in with email for now.",
+      );
+    unwrap(
+      await client.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin + "/login",
+          queryParams: { prompt: "select_account" },
+        },
+      }),
     );
   },
   async register(name, email, password) {

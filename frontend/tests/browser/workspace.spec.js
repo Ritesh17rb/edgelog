@@ -502,6 +502,141 @@ test("Zerodha setup and expired sessions explain the next step on phones", async
     fullPage: true,
   });
 });
+test("Google sign-in is offered on login and registration and starts the correct OAuth flow", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  await page.route("**/auth/v1/settings", (route) =>
+    route.fulfill({ json: { external: { google: true } } }),
+  );
+  await page.route("**/auth/v1/authorize?**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "Google sign-in handoff" }),
+  );
+  for (const path of ["/login", "/register"]) {
+    await page.goto(path);
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await expect(page).toHaveURL(
+      /journal-test\.supabase\.co\/auth\/v1\/authorize/,
+    );
+    const url = new URL(page.url());
+    expect(url.searchParams.get("provider")).toBe("google");
+    expect(url.searchParams.get("redirect_to")).toBe(
+      "http://127.0.0.1:5174/login",
+    );
+    expect(url.searchParams.get("prompt")).toBe("select_account");
+  }
+});
+
+test("disabled Google provider keeps users on the form with email sign-in available", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  await page.route("**/auth/v1/settings", (route) =>
+    route.fulfill({ json: { external: { google: false } } }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Google sign-in isn't available yet",
+  );
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("sb-journal-test-auth-token"),
+    ),
+  ).toBeNull();
+});
+
+test("Google provider outages can be retried without creating a session", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  await page.route("**/auth/v1/settings", (route) =>
+    route.fulfill({ status: 503, json: {} }),
+  );
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Google sign-in is unavailable right now",
+  );
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toBeEnabled();
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test("Google OAuth return restores the session and opens the dashboard", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  const googleUser = { ...user, user_metadata: { full_name: "Google Trader" } };
+  await page.route("**/auth/v1/user", (route) =>
+    route.fulfill({ json: googleUser }),
+  );
+  const encode = (value) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  const token =
+    encode({ alg: "HS256", typ: "JWT" }) +
+    "." +
+    encode({
+      sub: owner,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      role: "authenticated",
+    }) +
+    ".test";
+  const hash = new URLSearchParams({
+    access_token: token,
+    refresh_token: "test-refresh",
+    expires_in: "3600",
+    token_type: "bearer",
+  });
+  await page.goto("/login#" + hash);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const session = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("sb-journal-test-auth-token")),
+  );
+  expect(session.user.id).toBe(owner);
+  expect(session.user.user_metadata.full_name).toBe("Google Trader");
+  expect(new URL(page.url()).hash).toBe("");
+});
+
+test("cancelled Google OAuth returns show an error and do not authenticate", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  for (const suffix of [
+    "#error=access_denied&error_description=Sign-in+cancelled",
+    "?error=access_denied&error_description=Sign-in+cancelled",
+  ]) {
+    await page.goto("/login" + suffix);
+    await expect(page.getByRole("alert")).toContainText("Sign-in cancelled");
+    await expect(
+      page.getByRole("button", { name: "Continue with Google" }),
+    ).toBeEnabled();
+  }
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login$/);
+  for (const path of ["/forgot-password", "/reset-password"]) {
+    await page.goto(path);
+    await expect(
+      page.getByRole("button", { name: "Continue with Google" }),
+    ).toHaveCount(0);
+  }
+});
+
 test("failed passwords never create an authenticated session", async ({
   page,
 }) => {

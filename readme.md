@@ -37,6 +37,8 @@ Configure custom SMTP for real invitation, confirmation and password recovery em
 
 ## 2. Run the frontend
 
+Google sign-in is available on login and registration after configuring the Google provider in Supabase. See [the Google sign-in setup guide](docs/google-sign-in.md). Google credentials stay in Supabase; the frontend uses the same two variables below.
+
 Requirements: Node 22.12+ and npm.
 
 From frontend/:

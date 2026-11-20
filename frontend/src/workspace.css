@@ -1160,6 +1160,38 @@ details summary .muted {
   width: 100%;
   justify-content: space-between;
 }
+.auth-form .google-sign-in {
+  justify-content: center;
+  gap: 12px;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid #b8bdc7;
+  font-size: 14px;
+  min-height: 44px;
+}
+.auth-form .google-sign-in:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #7965d9;
+}
+.google-sign-in svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
 .auth-form .text-link {
   font-size: 12px;
 }

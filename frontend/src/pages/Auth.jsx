@@ -1,19 +1,54 @@
-import { useContext, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useContext, useEffect, useState } from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { FiArrowRight } from "react-icons/fi";
+import { FcGoogle } from "react-icons/fc";
 import BrandMark from "../components/BrandMark";
 import { AuthContext } from "../context/AuthContext";
 import authService from "../services/authService";
 import { db, isConfigured } from "../lib/supabase";
 import { Field, Notice } from "../components/WorkspaceUI";
 export default function Auth({ mode = "login" }) {
-  const { login, register, user } = useContext(AuthContext);
+  const { login, register, user, loading } = useContext(AuthContext);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const [params] = useSearchParams();
+  const location = useLocation();
+  const [googleBusy, setGoogleBusy] = useState(false);
   const navigate = useNavigate();
+  const showGoogle = mode === "login" || mode === "register";
+  const hashParams = new URLSearchParams(location.hash.slice(1));
+  const callbackError =
+    params.get("error_description") ||
+    hashParams.get("error_description") ||
+    (params.has("error") || hashParams.has("error")
+      ? "Google sign-in was cancelled or could not be completed. Please try again."
+      : null);
+  useEffect(() => {
+    if (showGoogle && user && !loading)
+      navigate("/dashboard", { replace: true });
+  }, [showGoogle, user, loading, navigate]);
+  async function continueWithGoogle() {
+    if (busy || googleBusy) return;
+    setGoogleBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await authService.loginWithGoogle();
+    } catch (failure) {
+      setError(
+        failure.message ||
+          "Google sign-in could not be started. Please try again.",
+      );
+      setGoogleBusy(false);
+    }
+  }
   const titles = {
     login: "Welcome back.",
     register: "Build your trading journal.",
@@ -22,6 +57,7 @@ export default function Auth({ mode = "login" }) {
   };
   async function submit(e) {
     e.preventDefault();
+    if (busy || googleBusy) return;
     setBusy(true);
     setError("");
     setMessage("");
@@ -89,13 +125,30 @@ export default function Auth({ mode = "login" }) {
           {!isConfigured && (
             <Notice error="Setup required: add your Supabase URL and publishable key to frontend/.env.local. See readme.md." />
           )}
-          {(error || params.get("error_description")) && (
-            <Notice error={error || params.get("error_description")} />
+          {(error || callbackError) && (
+            <Notice error={error || callbackError} />
           )}
           {message && (
             <p className="success" role="status">
               {message}
             </p>
+          )}
+          {showGoogle && (
+            <>
+              <button
+                className="button google-sign-in"
+                type="button"
+                onClick={continueWithGoogle}
+                disabled={busy || googleBusy || !isConfigured || loading}
+                aria-busy={googleBusy}
+              >
+                <FcGoogle aria-hidden="true" />
+                {googleBusy ? "Connecting to Google…" : "Continue with Google"}
+              </button>
+              <div className="auth-divider">
+                <span>or continue with email</span>
+              </div>
+            </>
           )}
           {mode === "register" && (
             <Field label="Your name">
@@ -140,7 +193,9 @@ export default function Auth({ mode = "login" }) {
           )}
           <button
             className="button primary"
-            disabled={busy || !isConfigured || (mode === "reset" && !user)}
+            disabled={
+              busy || googleBusy || !isConfigured || (mode === "reset" && !user)
+            }
           >
             {busy
               ? "Please wait…"

@@ -14,7 +14,7 @@ export const journalService = {
     return (
       row || {
         id: user.id,
-        name: user.user_metadata?.name || "",
+        name: user.user_metadata?.name || user.user_metadata?.full_name || "",
         currency: "USD",
         timezone: "Asia/Kolkata",
       }
