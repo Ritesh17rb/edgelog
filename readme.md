@@ -33,7 +33,9 @@ In Authentication URL Configuration:
 - Allow your deployed origin followed by /reset-password as a redirect URL.
 - During development also allow http://localhost:5173/reset-password.
 
-Configure custom SMTP for real invitation, confirmation and password recovery emails. Supabase's built-in email sender is intended for testing and restricts recipients. Keep email confirmation enabled if using public registration.
+For immediate email/password registration, open **Authentication → Sign In / Providers → Email**, turn **Confirm email** off, and save. New accounts then receive a session immediately and open the dashboard without a verification email. The frontend already supports this flow. `supabase/config.toml` disables confirmation for local Supabase too; it does not change the hosted project's settings.
+
+Configure custom SMTP for real invitation and password recovery emails. Supabase's built-in email sender is intended for testing and restricts recipients. Password recovery still uses an email link.
 
 ## 2. Run the frontend
 

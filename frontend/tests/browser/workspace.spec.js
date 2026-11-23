@@ -502,6 +502,56 @@ test("Zerodha setup and expired sessions explain the next step on phones", async
     fullPage: true,
   });
 });
+test("email signup without confirmation opens the dashboard and persists the session", async ({
+  page,
+}) => {
+  await fixtures(page, { signedIn: false });
+  let signup;
+  await page.route("**/auth/v1/signup**", async (route) => {
+    signup = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        access_token: [
+          Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
+            "base64url",
+          ),
+          Buffer.from(
+            JSON.stringify({
+              sub: owner,
+              exp: Math.floor(Date.now() / 1000) + 3600,
+              role: "authenticated",
+            }),
+          ).toString("base64url"),
+          "test",
+        ].join("."),
+        refresh_token: "test-signup-refresh-token",
+        token_type: "bearer",
+        expires_in: 3600,
+        user: { ...user, email_confirmed_at: new Date().toISOString() },
+      },
+    });
+  });
+  await page.goto("/register");
+  await page.getByLabel("Your name").fill("Test Trader");
+  await page.getByLabel("Email address").fill(user.email);
+  await page.getByLabel("Password", { exact: false }).fill("test-password-123");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  expect(signup.email).toBe(user.email);
+  expect(signup.data.name).toBe("Test Trader");
+  await page.reload();
+  await expect(
+    page.getByRole("navigation", { name: "Main navigation" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const session = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("sb-journal-test-auth-token")),
+  );
+  expect(session.user.id).toBe(owner);
+});
+
 test("Google sign-in is offered on login and registration and starts the correct OAuth flow", async ({
   page,
 }) => {
