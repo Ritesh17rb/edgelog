@@ -24,7 +24,7 @@ MCP is the interface; Marketaux supplies the feed and Gemini supplies AI generat
    | --- | --- |
    | `MARKETAUX_API_KEY` | Financial news feed |
    | `GEMINI_API_KEY` | Excerpt summaries and Google-backed research |
-   | `APP_ORIGIN` | Exact frontend origin, e.g. `https://edgelog-iota-six.vercel.app` |
+   | `NEWS_APP_ORIGIN` | Exact frontend origin, e.g. `https://edgelog-iota-six.vercel.app`. Falls back to `APP_ORIGIN` if unset; the separate setting preserves broker integration configuration. |
    | `GEMINI_MODEL` | Optional; defaults to `gemini-3.5-flash-lite`. Use a model supporting `generateContent` and Google Search grounding in your account. |
    | `NEWS_ARTICLES_PER_REQUEST` | Optional; defaults to 3, matching the Marketaux free tier's per-request allowance. |
 

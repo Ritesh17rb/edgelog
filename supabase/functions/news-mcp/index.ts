@@ -9,7 +9,7 @@ Deno.serve(
   createHandler({
     admin,
     config: {
-      appOrigin: Deno.env.get("APP_ORIGIN"),
+      appOrigin: Deno.env.get("NEWS_APP_ORIGIN") || Deno.env.get("APP_ORIGIN"),
       marketauxKey: Deno.env.get("MARKETAUX_API_KEY"),
       geminiKey: Deno.env.get("GEMINI_API_KEY"),
       geminiModel: Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite",
