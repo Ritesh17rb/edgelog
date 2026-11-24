@@ -1,7 +1,7 @@
 """Verify deployed news/MCP using a temporary Auth user, then delete it.
 
 Needs the already authenticated Supabase CLI. Credentials remain in process memory.
-No AI calls or journal writes are made. --feed checks live GDELT discovery.
+No AI calls or journal writes are made. --feed checks live news discovery.
 """
 import json
 import subprocess
@@ -90,9 +90,9 @@ def main():
             feed = request('/functions/v1/news-mcp/app', {'action':'feed','args':{'query':'gold','hours':24}},token)
             assert isinstance(feed.get('articles'),list)
             for article in feed['articles']:
-                assert article['id'].startswith('gdelt:') and article['published_at'] is None and article['indexed_at']
-                assert not article['description']
-            print('Live GDELT feed through authenticated MCP: passed; articles='+str(len(feed['articles'])))
+                assert article['id'].startswith('thenewsapi:') and article['published_at']
+            assert feed['articles'], 'The live news query returned no stories'
+            print('Live news feed through authenticated MCP: passed; articles='+str(len(feed['articles'])))
         print("Live authenticated MCP initialization, seven-tool discovery and empty private library: passed.")
         print("Provider configuration: " + json.dumps(status))
     finally:

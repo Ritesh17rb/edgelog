@@ -269,7 +269,7 @@ async function newsFixture(
       calls.push({ action, args });
       if (action === "status")
         return route.fulfill({
-          json: { news: true, ai: true, provider: "gdelt" },
+          json: { news: true, ai: true, provider: "thenewsapi" },
         });
       if (action === "library") return route.fulfill({ json: { items } });
       if (action === "feed")
@@ -291,7 +291,8 @@ async function newsFixture(
           : route.fulfill({
               status: 503,
               json: {
-                error: "GDELT is temporarily unavailable. Please retry.",
+                error:
+                  "The news provider is temporarily unavailable. Please retry.",
               },
             });
       if (action === "save" || action === "like") {
@@ -454,7 +455,7 @@ test("news outages show a retry without invented stories and leave research avai
   await newsFixture(page, { configured: false });
   await page.goto("/dashboard/news");
   await expect(page.getByRole("alert")).toContainText(
-    "GDELT is temporarily unavailable",
+    "The news provider is temporarily unavailable",
   );
   await expect(page.locator(".news-card")).toHaveCount(0);
   await page

@@ -53,66 +53,6 @@ function checked(result) {
     );
   return result.data;
 }
-export function gdeltQuery(query) {
-  if (!query)
-    return '("stock market" OR forex OR gold OR bitcoin OR inflation OR "central bank") sourcelang:english';
-  const terms = query
-    .split("|")
-    .slice(0, 8)
-    .map((value) =>
-      value
-        .replace(/[^\p{L}\p{N}\s.-]/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim(),
-    )
-    .filter((value) => value.length >= 3);
-  if (!terms.length)
-    throw new NewsError("Use a topic with at least three characters.");
-  const expression = terms
-    .map((value) => (value.includes(" ") ? '"' + value + '"' : value))
-    .join(" OR ");
-  return (
-    (terms.length > 1 ? "(" + expression + ")" : expression) +
-    " sourcelang:english"
-  );
-}
-export async function normalizeGdeltArticle(row) {
-  if (!row || typeof row !== "object") return null;
-  const url = safeUrl(row.url),
-    title = text(row.title, 1000).trim();
-  const match =
-    typeof row.seendate === "string" &&
-    row.seendate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
-  if (!url || !title || !match) return null;
-  const indexed =
-    match[1] +
-    "-" +
-    match[2] +
-    "-" +
-    match[3] +
-    "T" +
-    match[4] +
-    ":" +
-    match[5] +
-    ":" +
-    match[6] +
-    ".000Z";
-  if (
-    !Number.isFinite(Date.parse(indexed)) ||
-    new Date(indexed).toISOString() !== indexed
-  )
-    return null;
-  return {
-    id: "gdelt:" + (await hash(url)),
-    title,
-    url,
-    source: text(row.domain || new URL(url).hostname, 200),
-    description: "",
-    image_url: safeUrl(row.socialimage),
-    published_at: null,
-    indexed_at: indexed,
-  };
-}
 export const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
 export function parseOpenAIResponse(result, grounded) {
   if (result.status !== "completed")
@@ -239,9 +179,7 @@ export function createNewsService({
       throw new NewsError(
         response.status === 429
           ? "The provider’s request allowance has been reached. Please retry later."
-          : "The information provider is temporarily unavailable (HTTP " +
-              response.status +
-              "). Please retry.",
+          : "The information provider is temporarily unavailable. Please retry.",
         503,
         "provider_unavailable",
       );
@@ -308,64 +246,43 @@ export function createNewsService({
     };
   }
   return {
-    status: () => ({ news: true, ai: !!config.openaiKey, provider: "gdelt" }),
+    status: () => ({
+      news: !!config.newsApiKey,
+      ai: !!config.openaiKey,
+      provider: "thenewsapi",
+    }),
     async search({ query = "", hours = 24 } = {}) {
       query = text(query, 200).trim();
       if (!Number.isInteger(hours) || hours < 1 || hours > 168)
         throw new NewsError("Choose a time range between 1 and 168 hours.");
-      const searchQuery = gdeltQuery(query);
+      if (!config.newsApiKey)
+        throw new NewsError(
+          "The news feed needs a key from The News API configured on the server.",
+          503,
+          "news_not_configured",
+        );
       const key =
-        "feed:gdelt:v1:" +
+        "feed:thenewsapi:v1:" +
         (await hash(JSON.stringify([query.toLowerCase(), hours])));
       const hit = await cached(key);
       if (hit) return { ...hit, cached: true };
       await budget("news:user:" + userId, 30);
       await budget("news:global", 80);
-      if (!checked(await admin.rpc("news_acquire_gdelt_slot"))) {
-        await new Promise((resolve) => setTimeout(resolve, 5100));
-        const warmed = await cached(key);
-        if (warmed) return { ...warmed, cached: true };
-        if (!checked(await admin.rpc("news_acquire_gdelt_slot")))
-          throw new NewsError(
-            "News searches are busy. Please wait a few seconds and retry.",
-            429,
-            "news_busy",
-          );
-      }
-      const url = new URL("https://api.gdeltproject.org/api/v2/doc/doc");
+      const url = new URL("https://api.thenewsapi.com/v1/news/all");
       Object.entries({
-        query: searchQuery,
-        mode: "ArtList",
-        format: "json",
-        timespan: hours + "h",
-        sort: "DateDesc",
-        maxrecords: config.newsLimit || 20,
+        api_token: config.newsApiKey,
+        language: "en",
+        limit: config.newsLimit || 3,
+        published_after: new Date(now().getTime() - hours * 3600000)
+          .toISOString()
+          .slice(0, 19),
+        sort: "published_at",
+        ...(query ? { search: query } : { categories: "business" }),
       }).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-      const result =
-        config.newsRelayUrl && config.newsRelayToken
-          ? await request(config.newsRelayUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + config.newsRelayToken,
-              },
-              body: JSON.stringify({
-                query: searchQuery,
-                hours,
-                limit: config.newsLimit || 20,
-              }),
-            })
-          : await request(url, {
-              headers: {
-                "User-Agent":
-                  "EdgeLog-News/1.0 (+https://edgelog-iota-six.vercel.app)",
-              },
-            });
-      const rows =
-        result && typeof result === "object" && Object.keys(result).length === 0
-          ? []
-          : result?.articles;
-      if (!Array.isArray(rows))
+      const result = await request(url, {
+        headers: { Accept: "application/json", "User-Agent": "EdgeLog/1.0" },
+      });
+      if (!Array.isArray(result.data))
         throw new NewsError(
           "The news provider returned an invalid feed.",
           502,
@@ -373,9 +290,13 @@ export function createNewsService({
         );
       const articles = [
         ...new Map(
-          (await Promise.all(rows.map(normalizeGdeltArticle)))
+          result.data
+            .map(normalizeArticle)
             .filter(Boolean)
-            .map((a) => [a.url, a]),
+            .map((a) => [
+              a.url,
+              { ...a, id: "thenewsapi:" + a.id.slice(0, 89) },
+            ]),
         ).values(),
       ];
       if (articles.length)

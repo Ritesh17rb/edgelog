@@ -559,16 +559,31 @@ export default function News() {
           )}
           <p className="news-feed-footnote">
             Stories link to their original publishers. Times use your device
-            timezone. GDELT times show when a story was indexed. News discovery
-            by{" "}
+            timezone. News discovery by{" "}
             <a
-              href="https://www.gdeltproject.org/"
+              href="https://www.thenewsapi.com/"
               target="_blank"
               rel="noopener noreferrer"
             >
-              GDELT
+              The News API
             </a>
             .
+            {articles.some(
+              (article) => article.indexed_at && !article.published_at,
+            ) && (
+              <>
+                {" "}
+                Older indexed stories were discovered by{" "}
+                <a
+                  href="https://www.gdeltproject.org/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GDELT
+                </a>
+                ; their dates show indexing time.
+              </>
+            )}
           </p>
         </section>
         <aside className="news-research" aria-label="AI research desk">

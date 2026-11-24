@@ -107,7 +107,7 @@ The optional **Integrations → Zerodha** workflow supports the free Personal AP
 
 ## News and AI research through MCP
 
-Open **News** for financial stories, topic/date searches, a synced saved/liked reading list, original-link sharing, excerpt summaries and an OpenAI web research desk. The authenticated Supabase `news-mcp` function exposes the same seven tools to standard MCP clients. Apply migrations 004 and 005, and deploy the function. The GDELT headline feed needs no API key; only AI features need a server-side OpenAI key. Headline-only stories offer explicit web research, with indexing dates clearly labelled. See [architecture, deployment and MCP connection instructions](docs/news-mcp.md).
+Open **News** for financial stories, topic/date searches, a synced saved/liked reading list, original-link sharing, excerpt summaries and an OpenAI web research desk. The authenticated Supabase `news-mcp` function exposes the same seven tools to standard MCP clients. Apply migration 004 and deploy the function. The feed uses The News API with the server-side THENEWSAPI_API_KEY; AI features use the existing OpenAI key. Previously applied migration 005 preserves indexing dates for older saved stories. See [architecture, deployment and MCP connection instructions](docs/news-mcp.md).
 
 ## Price alerts
 
