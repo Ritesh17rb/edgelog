@@ -11,9 +11,14 @@ import {
   FiClock,
   FiCheck,
   FiX,
+  FiCompass,
+  FiCopy,
+  FiTrendingUp,
+  FiDollarSign,
+  FiActivity,
 } from "react-icons/fi";
 import { newsService } from "../services/newsService";
-import { briefingParts } from "../lib/newsCitations";
+import Briefing from "../components/NewsBriefing";
 import "./news.css";
 
 const topics = [
@@ -25,9 +30,24 @@ const topics = [
   ["Equities", "stocks | earnings | equity"],
 ];
 const prompts = [
-  "What are the latest developments affecting gold?",
-  "What changed in the US dollar today?",
-  "Give me a concise Bitcoin briefing.",
+  {
+    label: "Gold & metals",
+    detail: "The forces behind the latest moves",
+    question: "What are the latest developments affecting gold?",
+    icon: FiTrendingUp,
+  },
+  {
+    label: "Dollar watch",
+    detail: "Policy, currencies, and the bigger picture",
+    question: "What changed in the US dollar today?",
+    icon: FiDollarSign,
+  },
+  {
+    label: "Bitcoin brief",
+    detail: "A focused look at the crypto conversation",
+    question: "Give me a concise Bitcoin briefing.",
+    icon: FiActivity,
+  },
 ];
 function date(value) {
   return new Date(value).toLocaleString(undefined, {
@@ -46,53 +66,6 @@ function safeLink(value) {
   } catch {
     return null;
   }
-}
-function Briefing({ result }) {
-  return (
-    <div className="news-briefing">
-      <span className="news-kicker">
-        {result.kind === "excerpt_summary" ? "EXCERPT SUMMARY" : "WEB RESEARCH"}{" "}
-        · {date(result.researchedAt)}
-      </span>
-      <p className="news-answer">
-        {briefingParts(result.answer, result.citations).map((part, index) =>
-          part.url ? (
-            <a
-              key={index}
-              href={part.url}
-              title={part.title}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {part.text}
-            </a>
-          ) : (
-            <span key={index}>{part.text}</span>
-          ),
-        )}
-      </p>
-      <div className="news-sources" aria-label="Research sources">
-        {result.sources
-          ?.filter((s) => safeLink(s.url))
-          .map((source, i) => (
-            <a
-              key={source.url + i}
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              [{i + 1}] {source.title || "Original source"}{" "}
-              <FiGlobe aria-hidden="true" />
-            </a>
-          ))}
-      </div>
-      <p className="news-disclosure">
-        {result.kind === "excerpt_summary"
-          ? "Based on the publisher excerpt; the full article was not read."
-          : "AI research may miss updates. Check the linked sources and their dates."}
-      </p>
-    </div>
-  );
 }
 export default function News() {
   const [tab, setTab] = useState("discover"),
@@ -115,6 +88,32 @@ export default function News() {
     [researchError, setResearchError] = useState(""),
     [researching, setResearching] = useState(false);
   const researchInput = useRef(null);
+  const researchResult = useRef(null);
+  useEffect(() => {
+    if (research) {
+      researchResult.current?.scrollIntoView({
+        block: "start",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+      researchResult.current?.focus({ preventScroll: true });
+    }
+  }, [research]);
+  async function copyResearch() {
+    try {
+      await navigator.clipboard.writeText(
+        research.answer +
+          "\n\nSources:\n" +
+          (research.sources || [])
+            .map((source) => source.title + ": " + source.url)
+            .join("\n"),
+      );
+      setMessage("Briefing and source links copied.");
+    } catch {
+      setMessage("Clipboard unavailable. Select the briefing text to copy it.");
+    }
+  }
   useEffect(() => {
     let active = true;
     newsService
@@ -238,7 +237,11 @@ export default function News() {
     setResearchError("");
     setResearch(null);
     try {
-      setResearch(await newsService.research(question.trim()));
+      const submitted = question.trim();
+      setResearch({
+        ...(await newsService.research(submitted)),
+        question: submitted,
+      });
     } catch (e) {
       setResearchError(e.message);
     } finally {
@@ -436,6 +439,44 @@ export default function News() {
       </div>
       <div className="news-layout">
         <section className="news-feed" aria-label="News stories">
+          {research && (
+            <section
+              className="news-research-result"
+              aria-label="Research briefing"
+              ref={researchResult}
+              tabIndex={-1}
+            >
+              <header className="news-result-heading">
+                <div>
+                  <span className="news-kicker">THE RESEARCH NOTE</span>
+                  <h2>Your market briefing.</h2>
+                </div>
+                <div className="news-result-actions">
+                  <button
+                    type="button"
+                    aria-label="Copy sourced briefing"
+                    title="Copy briefing with sources"
+                    onClick={copyResearch}
+                  >
+                    <FiCopy />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Close research briefing"
+                    title="Close briefing"
+                    onClick={() => {
+                      setResearch(null);
+                      researchInput.current?.focus();
+                    }}
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              </header>
+              <p className="news-result-question">{research.question}</p>
+              <Briefing result={research} />
+            </section>
+          )}
           <div className="news-toolbar">
             <div className="news-tabs" role="group" aria-label="Reading view">
               {[
@@ -589,29 +630,36 @@ export default function News() {
         <aside className="news-research" aria-label="AI research desk">
           <div className="news-research-heading">
             <span className="news-ai-icon">
-              <FiZap />
+              <FiCompass aria-hidden="true" />
             </span>
-            <span className="news-kicker">GO BEYOND THE HEADLINE</span>
+            <span className="news-kicker">BEYOND THE HEADLINE</span>
           </div>
           <h2>Your research desk.</h2>
-          <p>
-            Ask a question. Get a fresh perspective, grounded in web sources.
+          <p className="news-research-intro">
+            A question. A few credible sources.
+            <br />A clearer view of the market.
           </p>
-          <form onSubmit={ask}>
+          <form className="news-research-form" onSubmit={ask}>
             <label htmlFor="news-research-question">
               What’s on your radar?
             </label>
-            <textarea
-              id="news-research-question"
-              ref={researchInput}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="What’s happening with gold today?"
-              maxLength={1200}
-              rows={4}
-              required
-              minLength={5}
-            />
+            <div className="news-question-field">
+              <textarea
+                id="news-research-question"
+                ref={researchInput}
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Follow a market move, explore a story, or connect the dots…"
+                maxLength={1200}
+                rows={3}
+                required
+                minLength={5}
+              />
+              <div className="news-question-hint">
+                <span>Search the web, with sources</span>
+                <span>{question.length}/1200</span>
+              </div>
+            </div>
             <button
               className="news-research-submit"
               disabled={
@@ -620,70 +668,84 @@ export default function News() {
                 status?.ai === false
               }
             >
-              <FiGlobe />
+              <FiGlobe aria-hidden="true" />
               {researching ? "Researching sources…" : "Research the web"}
             </button>
           </form>
           {!research && !researching && (
             <div className="news-prompts">
-              <span>START WITH A QUESTION</span>
-              {prompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => {
-                    setQuestion(prompt);
-                    researchInput.current?.focus();
-                  }}
-                >
-                  {prompt}
-                </button>
-              ))}
+              <span>FIND YOUR STARTING POINT</span>
+              {prompts.map(
+                ({ label, detail, question: prompt, icon: Icon }) => (
+                  <button
+                    type="button"
+                    key={label}
+                    onClick={() => {
+                      setQuestion(prompt);
+                      researchInput.current?.focus();
+                    }}
+                  >
+                    <span className="news-prompt-icon">
+                      <Icon aria-hidden="true" />
+                    </span>
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{detail}</small>
+                    </span>
+                    <span className="news-prompt-plus" aria-hidden="true">
+                      +
+                    </span>
+                  </button>
+                ),
+              )}
             </div>
           )}
           {status?.ai === false && (
             <p className="news-research-note">
-              AI research will be available once OpenAI is configured on the
-              server.
+              AI research is currently unavailable. Please try again later.
             </p>
           )}
           {researching && (
-            <p role="status" className="news-research-note">
-              Searching the web and checking sources. This may take a moment.
-            </p>
+            <div role="status" className="news-research-progress">
+              <span className="news-progress-icon">
+                <FiGlobe aria-hidden="true" />
+              </span>
+              <strong>Following the story</strong>
+              <p>
+                Finding relevant reporting and bringing the context together.
+              </p>
+              <span className="news-progress-line" />
+              <span className="news-progress-line" />
+              <span className="news-progress-line" />
+            </div>
           )}
           {researchError && (
-            <p role="alert" className="news-research-note">
-              {researchError}
-            </p>
+            <div role="alert" className="news-research-note">
+              <strong>We couldn’t finish this briefing.</strong>
+              <p>{researchError}</p>
+            </div>
           )}
-          {research && (
-            <>
-              <Briefing result={research} />
-              <button
-                className="news-copy-brief"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(
-                      research.answer +
-                        "\n\nSources:\n" +
-                        research.sources
-                          .map((s) => s.title + ": " + s.url)
-                          .join("\n"),
-                    );
-                    setMessage("Briefing and source links copied.");
-                  } catch {
-                    setMessage(
-                      "Clipboard unavailable. Select the briefing text to copy it.",
-                    );
-                  }
-                }}
-              >
-                <FiShare2 /> Copy sourced briefing
-              </button>
-            </>
+          {research && !researching && (
+            <button
+              type="button"
+              className="news-view-briefing"
+              onClick={() => {
+                researchResult.current?.scrollIntoView({
+                  block: "start",
+                  behavior: "smooth",
+                });
+                researchResult.current?.focus({ preventScroll: true });
+              }}
+            >
+              <FiFileText aria-hidden="true" />
+              <span>
+                <strong>Your briefing is ready</strong>
+                <small>Read the research and explore its sources</small>
+              </span>
+            </button>
           )}
           <div className="news-research-footer">
-            <FiCheck aria-hidden="true" /> Sources first. Perspective second.
+            <FiCheck aria-hidden="true" /> A little context goes a long way.
           </div>
         </aside>
       </div>

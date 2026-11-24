@@ -1,6 +1,6 @@
 # News and the EdgeLog MCP server
 
-EdgeLog includes a responsive news reading room at `/dashboard/news` and an authenticated, stateless MCP endpoint. Its seven tools search financial news, retrieve provider excerpts, read the user's library, save/unsave, like/unlike, summarise an excerpt, and research a question using OpenAI web search. Sources and research timestamps accompany briefings. Sharing sends the original publisher URL or copies a sourced briefing.
+EdgeLog includes a responsive news reading room at `/dashboard/news` and an authenticated, stateless MCP endpoint. Its seven tools search financial news, retrieve provider excerpts, read the user's library, save/unsave, like/unlike, summarise an excerpt, and research a question using OpenAI web search. Sources and research timestamps accompany briefings. The Research Desk displays completed answers in a wider reading area with formatted headings, lists, emphasis, inline citations and collapsible source cards. Markdown rendering disables raw HTML and remote images; verified citation offsets remain attached to the original answer text. Sharing sends the original publisher URL or copies a sourced briefing.
 
 ## Architecture
 
@@ -100,7 +100,7 @@ npm ci
 npm test
 cd ../../../frontend
 node --test tests/newsDatabase.test.js
-npm run test:browser -- --grep "news saves|mobile news|news outages|GDELT headlines"
+npm run test:browser -- --grep "news saves|mobile news|news outages|GDELT headlines|research desk presents"
 npm run build
 ```
 

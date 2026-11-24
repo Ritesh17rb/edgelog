@@ -246,6 +246,7 @@ async function newsFixture(
   page,
   { configured = true, failResearch = false, headlineOnly = false } = {},
 ) {
+  test.setTimeout(90_000);
   const article = {
     id: "news-1",
     title: "Central bank holds rates as markets assess inflation",
@@ -383,16 +384,15 @@ test("news saves and likes survive reload, summaries identify excerpts, and rese
   await page
     .getByRole("button", { name: "Research the web", exact: true })
     .click();
-  await expect(page.locator(".news-research .news-answer")).toContainText(
-    "official statement",
-  );
-  await expect(page.locator(".news-research .news-answer a")).toHaveAttribute(
-    "href",
-    article.url,
-  );
+  await expect(
+    page.locator(".news-research-result .news-answer"),
+  ).toContainText("official statement");
+  await expect(
+    page.locator(".news-research-result .news-answer a"),
+  ).toHaveAttribute("href", article.url);
   await expect(
     page
-      .locator(".news-research")
+      .locator(".news-research-result .news-sources")
       .getByRole("link", { name: "Original statement", exact: false }),
   ).toHaveAttribute("href", article.url);
   expect(calls.some((c) => c.action === "research")).toBe(true);
@@ -495,9 +495,110 @@ test("GDELT headlines label indexing dates and prepare research without automati
   await page
     .getByRole("button", { name: "Research the web", exact: true })
     .click();
-  await expect(page.locator(".news-research .news-answer")).toContainText(
-    "official statement",
+  await expect(
+    page.locator(".news-research-result .news-answer"),
+  ).toContainText("official statement");
+});
+
+test("research desk presents Markdown, safe citations and sources in a responsive reading area", async ({
+  page,
+}) => {
+  await fixtures(page);
+  await newsFixture(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const answer =
+    "## Bitcoin: the market in context\n\nA concise briefing with the important details in view.\n\n- **Price:** The latest report describes a pullback, with prices varying by venue.\n- **Flows:** Compare the **reported flows** with the original publication date.\n- **Company news:** Separate an announcement from its market interpretation. See the [daily report](https://example.com/daily-report).\n\n### What to keep in mind\n\n**Read-through:** These reports provide context; timing alone does not establish a market cause.\n\n<script>window.__newsXss=true</script>\n\n[unsafe](javascript:alert(1))\n\n![tracking](https://example.com/tracker.png)";
+  const sources = [
+    {
+      title: "Original statement and market update",
+      url: "https://example.com/statement",
+    },
+    {
+      title:
+        "Daily market coverage with a deliberately long title that should stay inside its source card without breaking the reading layout",
+      url: "https://example.com/daily-report",
+    },
+  ];
+  await page.route(
+    "https://journal-test.supabase.co/functions/v1/news-mcp/app",
+    async (route) => {
+      if (route.request().postDataJSON().action !== "research")
+        return route.fallback();
+      return route.fulfill({
+        json: {
+          answer,
+          sources,
+          citations: [
+            {
+              start: answer.indexOf("reported flows"),
+              end: answer.indexOf("reported flows") + "reported flows".length,
+              url: sources[0].url,
+              title: sources[0].title,
+            },
+          ],
+          researchedAt: "2026-11-25T09:00:00Z",
+          kind: "web_research",
+        },
+      });
+    },
   );
+  await page.goto("/dashboard/news");
+  await page
+    .locator(".news-research")
+    .screenshot({ path: "test-results/research-composer.png" });
+  await page
+    .getByRole("button", { name: "Bitcoin brief", exact: false })
+    .click();
+  await expect(page.getByLabel("What’s on your radar?")).toHaveValue(
+    "Give me a concise Bitcoin briefing.",
+  );
+  await page
+    .getByRole("button", { name: "Research the web", exact: true })
+    .click();
+  const result = page.getByRole("region", {
+    name: "Research briefing",
+    exact: true,
+  });
+  await expect(
+    result.getByRole("heading", { name: "Bitcoin: the market in context" }),
+  ).toBeVisible();
+  await expect(result.locator(".news-answer ul>li")).toHaveCount(3);
+  await expect(result.locator(".news-answer strong").first()).toHaveText(
+    "Price:",
+  );
+  await expect(result.locator(".news-answer")).not.toContainText("**");
+  await expect(
+    result.getByRole("link", {
+      name: "Source 1: Original statement and market update",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", sources[0].url);
+  await expect(result.locator(".news-sources>a")).toHaveCount(2);
+  await expect(result.locator("script,img")).toHaveCount(0);
+  await expect(result.locator('a[href^="javascript:"]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__newsXss)).toBeUndefined();
+  const readingBox = await result.boundingBox(),
+    composerBox = await page.locator(".news-research").boundingBox();
+  expect(readingBox.width).toBeGreaterThan(composerBox.width);
+  await result.screenshot({
+    path: "test-results/research-reading-desktop.png",
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await result.screenshot({ path: "test-results/research-reading-dark.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await result.screenshot({ path: "test-results/research-reading-mobile.png" });
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
+  await result
+    .getByRole("button", { name: "Close research briefing", exact: true })
+    .click();
+  await expect(result).toHaveCount(0);
+  await expect(page.getByLabel("What’s on your radar?")).toBeFocused();
 });
 
 async function brokerFixture(
