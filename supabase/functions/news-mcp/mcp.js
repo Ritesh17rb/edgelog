@@ -95,7 +95,7 @@ export function createMcpServer(service) {
   );
   tool(
     "research_latest",
-    "Research a financial question using Google Search through Gemini. Returns a briefing, sources, supporting citation metadata, and research time.",
+    "Research a financial question using OpenAI web search. Returns a briefing, source links, inline citation metadata, and research time.",
     { query: z.string().min(5).max(1200) },
     (args) => service.research(args),
   );

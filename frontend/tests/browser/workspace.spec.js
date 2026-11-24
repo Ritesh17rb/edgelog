@@ -319,6 +319,17 @@ async function newsFixture(
               ? "The official statement confirms unchanged rates."
               : "The excerpt reports that rates were unchanged.",
           sources: [{ title: "Original statement", url: article.url }],
+          citations:
+            action === "research"
+              ? [
+                  {
+                    start: 4,
+                    end: 22,
+                    url: article.url,
+                    title: "Original statement",
+                  },
+                ]
+              : [],
           researchedAt: "2026-11-24T08:02:00Z",
           kind: action === "research" ? "web_research" : "excerpt_summary",
         },
@@ -367,6 +378,10 @@ test("news saves and likes survive reload, summaries identify excerpts, and rese
     .click();
   await expect(page.locator(".news-research .news-answer")).toContainText(
     "official statement",
+  );
+  await expect(page.locator(".news-research .news-answer a")).toHaveAttribute(
+    "href",
+    article.url,
   );
   await expect(
     page

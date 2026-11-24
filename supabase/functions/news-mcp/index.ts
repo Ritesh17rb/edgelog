@@ -11,8 +11,8 @@ Deno.serve(
     config: {
       appOrigin: Deno.env.get("NEWS_APP_ORIGIN") || Deno.env.get("APP_ORIGIN"),
       marketauxKey: Deno.env.get("MARKETAUX_API_KEY"),
-      geminiKey: Deno.env.get("GEMINI_API_KEY"),
-      geminiModel: Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite",
+      openaiKey: Deno.env.get("OPENAI_API_KEY"),
+      openaiModel: Deno.env.get("OPENAI_MODEL"),
       newsLimit: Math.min(
         100,
         Math.max(1, Number(Deno.env.get("NEWS_ARTICLES_PER_REQUEST")) || 3),

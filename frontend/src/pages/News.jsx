@@ -13,6 +13,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { newsService } from "../services/newsService";
+import { briefingParts } from "../lib/newsCitations";
 import "./news.css";
 
 const topics = [
@@ -53,7 +54,23 @@ function Briefing({ result }) {
         {result.kind === "excerpt_summary" ? "EXCERPT SUMMARY" : "WEB RESEARCH"}{" "}
         · {date(result.researchedAt)}
       </span>
-      <p className="news-answer">{result.answer}</p>
+      <p className="news-answer">
+        {briefingParts(result.answer, result.citations).map((part, index) =>
+          part.url ? (
+            <a
+              key={index}
+              href={part.url}
+              title={part.title}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {part.text}
+            </a>
+          ) : (
+            <span key={index}>{part.text}</span>
+          ),
+        )}
+      </p>
       <div className="news-sources" aria-label="Research sources">
         {result.sources
           ?.filter((s) => safeLink(s.url))
@@ -69,15 +86,6 @@ function Briefing({ result }) {
             </a>
           ))}
       </div>
-      {result.searchEntryPoint && (
-        <iframe
-          className="news-search-attribution"
-          title="Google Search suggestions"
-          sandbox="allow-popups allow-popups-to-escape-sandbox"
-          referrerPolicy="no-referrer"
-          srcDoc={result.searchEntryPoint}
-        />
-      )}
       <p className="news-disclosure">
         {result.kind === "excerpt_summary"
           ? "Based on the publisher excerpt; the full article was not read."
@@ -591,7 +599,7 @@ export default function News() {
           )}
           {status?.ai === false && (
             <p className="news-research-note">
-              AI research will be available once Gemini is configured on the
+              AI research will be available once OpenAI is configured on the
               server.
             </p>
           )}

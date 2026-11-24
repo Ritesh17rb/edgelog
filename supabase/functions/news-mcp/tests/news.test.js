@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createHandler } from "../handler.js";
-import { createNewsService, normalizeArticle } from "../service.js";
+import {
+  createNewsService,
+  normalizeArticle,
+  parseOpenAIResponse,
+} from "../service.js";
 import { callAppTool } from "../mcp.js";
 
 const article = {
@@ -104,7 +108,7 @@ function fixture() {
 const config = {
   appOrigin: "https://app.example",
   marketauxKey: "test-marketaux",
-  geminiKey: "test-gemini",
+  openaiKey: "test-openai",
 };
 test("normalization rejects unsafe URLs, bad dates and strips markup", () => {
   assert.equal(
@@ -212,33 +216,45 @@ test("MCP save and like preserve one another and isolate user libraries", async 
   });
   assert.equal((await alice.library()).items[0].liked, true);
 });
-test("Google research requires sources, enables search, and enforces atomic budgets", async () => {
+test("OpenAI research enables live search, preserves citations, and enforces atomic budgets", async () => {
   const { admin, budgets } = fixture();
   let grounded = false;
   const fetcher = async (url, options) => {
     const body = JSON.parse(options.body);
-    grounded = !!body.tools?.[0]?.google_search;
+    assert.equal(url, "https://api.openai.com/v1/responses");
+    assert.equal(options.headers.Authorization, "Bearer test-openai");
+    assert.equal(body.store, false);
+    assert.equal(body.model, "gpt-6-luna");
+    assert.equal(body.tool_choice, "required");
+    assert.equal(body.max_tool_calls, 1);
+    assert.equal(body.max_output_tokens, 1200);
+    assert.equal(body.reasoning.effort, "none");
+    assert.equal(body.tools[0].search_context_size, "low");
+    grounded =
+      body.tools?.[0]?.type === "web_search" &&
+      body.tools[0].external_web_access === true;
     return Response.json({
-      candidates: [
+      status: "completed",
+      output: [
+        { type: "web_search_call", status: "completed" },
         {
-          content: { parts: [{ text: "The bank announced its decision." }] },
-          finishReason: "STOP",
-          groundingMetadata: {
-            groundingChunks: [
-              {
-                web: {
-                  uri: "https://centralbank.example/statement",
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: "The bank announced its decision.",
+              annotations: [
+                {
+                  type: "url_citation",
+                  start_index: 0,
+                  end_index: 31,
+                  url: "https://centralbank.example/statement",
                   title: "Official statement",
                 },
-              },
-            ],
-            groundingSupports: [
-              {
-                segment: { text: "The bank announced its decision." },
-                groundingChunkIndices: [0],
-              },
-            ],
-          },
+              ],
+            },
+          ],
         },
       ],
     });
@@ -255,10 +271,11 @@ test("Google research requires sources, enables search, and enforces atomic budg
   assert.equal(grounded, true);
   assert.equal(result.sources.length, 1);
   assert.equal(result.kind, "web_research");
-  assert.equal(result.supports.length, 1);
-  budgets.set("ai:user:alice", 20);
+  assert.equal(result.citations.length, 1);
+  assert.equal(result.citations[0].start, 0);
+  budgets.set("research:user:alice", 3);
   await assert.rejects(
-    () => service.research({ query: "Gold today" }),
+    () => service.research({ query: "Gold news this morning" }),
     (e) => e.status === 429,
   );
   budgets.clear();
@@ -268,11 +285,169 @@ test("Google research requires sources, enables search, and enforces atomic budg
     userId: "alice",
     fetcher: async () =>
       Response.json({
-        candidates: [{ content: { parts: [{ text: "Unverified answer" }] } }],
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Unverified answer" }],
+          },
+        ],
       }),
   });
   await assert.rejects(
     () => noSources.research({ query: "Gold today" }),
+    (e) => e.code === "no_sources",
+  );
+});
+test("research cache avoids repeated charges and stays scoped to its owner", async () => {
+  const { admin } = fixture();
+  let calls = 0;
+  const fetcher = async () => {
+    calls++;
+    return Response.json({
+      status: "completed",
+      output: [
+        { type: "web_search_call", status: "completed" },
+        {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: "Source",
+              annotations: [
+                {
+                  type: "url_citation",
+                  start_index: 0,
+                  end_index: 6,
+                  url: "https://source.example",
+                  title: "Source",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  };
+  const alice = createNewsService({ admin, config, userId: "alice", fetcher });
+  await alice.research({ query: "Gold news today" });
+  assert.equal(
+    (await alice.research({ query: "Gold news today" })).cached,
+    true,
+  );
+  assert.equal(calls, 1);
+  await createNewsService({ admin, config, userId: "bob", fetcher }).research({
+    query: "Gold news today",
+  });
+  assert.equal(calls, 2);
+});
+test("OpenAI summaries omit web search, honor model override and reuse cache", async () => {
+  const { admin, rows } = fixture();
+  rows.news_articles.push(normalizeArticle(article));
+  let calls = 0;
+  const service = createNewsService({
+    admin,
+    userId: "alice",
+    config: { ...config, openaiModel: "custom-model" },
+    fetcher: async (url, options) => {
+      calls++;
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, "custom-model");
+      assert.equal(body.tools, undefined);
+      assert.equal(body.tool_choice, undefined);
+      assert.equal(body.store, false);
+      assert.ok(body.input.includes(article.description));
+      return Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "The excerpt says rates were unchanged.",
+              },
+            ],
+          },
+        ],
+      });
+    },
+  });
+  const result = await service.summarize({ articleId: "article-1" });
+  assert.equal(result.kind, "excerpt_summary");
+  assert.equal(result.sources[0].url, article.url);
+  await service.summarize({ articleId: "article-1" });
+  assert.equal(calls, 1);
+});
+test("response parsing rejects incomplete, refused, unsafe and unsearched answers and preserves multipart offsets", () => {
+  for (const result of [
+    { status: "incomplete", output: [] },
+    { status: "failed", output: [] },
+    {
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "refusal", refusal: "Unable" }],
+        },
+      ],
+    },
+  ]) {
+    assert.throws(
+      () => parseOpenAIResponse(result, false),
+      (e) => e.code === "incomplete_answer",
+    );
+  }
+  const parts = [
+    { type: "output_text", text: "First paragraph." },
+    {
+      type: "output_text",
+      text: "Source",
+      annotations: [
+        {
+          type: "url_citation",
+          start_index: 0,
+          end_index: 6,
+          url: "https://source.example",
+          title: "Source",
+        },
+        {
+          type: "url_citation",
+          start_index: 0,
+          end_index: 6,
+          url: "javascript:alert(1)",
+        },
+        {
+          type: "url_citation",
+          start_index: -1,
+          end_index: 100,
+          url: "https://source.example",
+        },
+      ],
+    },
+  ];
+  const response = {
+    status: "completed",
+    output: [
+      { type: "web_search_call", status: "completed" },
+      { type: "message", role: "assistant", content: parts },
+    ],
+  };
+  const parsed = parseOpenAIResponse(response, true);
+  assert.equal(parsed.answer, "First paragraph.\nSource");
+  assert.equal(parsed.citations[0].start, 17);
+  assert.equal(parsed.citations.length, 1);
+  assert.equal(parsed.sources.length, 1);
+  assert.throws(
+    () =>
+      parseOpenAIResponse(
+        { ...response, output: response.output.slice(1) },
+        true,
+      ),
     (e) => e.code === "no_sources",
   );
 });
