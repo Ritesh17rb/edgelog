@@ -179,3 +179,6 @@ supabase/.temp/
 
 # Local Vercel project links and deployment state
 .vercel/
+
+# User-supplied local API credential
+/open_ai_api_key.md

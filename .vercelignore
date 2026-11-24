@@ -17,3 +17,4 @@ test-results
 **/playwright-report
 frontend/dist
 frontend/tests
+open_ai_api_key.md
