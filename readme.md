@@ -78,7 +78,7 @@ Documentation:
 
 ## 4. Deploy the frontend on Vercel
 
-Production frontend: [EdgeLog](https://edgelog-iota-six.vercel.app). Source: [Ritesh17rb/edgelog](https://github.com/Ritesh17rb/edgelog) (private). The Vercel project is connected to the repository's `main` branch with `frontend` as its root directory.
+Production frontend: [EdgeLog](https://edgelog-iota-six.vercel.app). Source: [Ritesh17rb/edgelog](https://github.com/Ritesh17rb/edgelog) (public). The Vercel project is connected to the repository's `main` branch with `frontend` as its root directory.
 
 When ready, import the new repository into Vercel with these settings:
 
@@ -104,6 +104,10 @@ Cloudflare Pages remains an alternative: use the same frontend build settings; `
 ## Zerodha trade import
 
 The optional **Integrations → Zerodha** workflow supports the free Personal API: secure broker login, today's execution preview, duplicate-safe import into a Supabase inbox, and confirmed conversion of complete positions into INR journal trades. Secrets and encrypted broker sessions stay server-side. Run migration 003 and deploy/configure the Edge Function before connecting. See [the complete setup guide](docs/zerodha-setup.md). This initial version enables one configured journal owner and does not place orders or fetch paid market data.
+
+## News and AI research through MCP
+
+Open **News** for financial stories, topic/date searches, a synced saved/liked reading list, original-link sharing, excerpt summaries and a Google-backed research desk. The authenticated Supabase `news-mcp` function exposes the same seven tools to standard MCP clients. Apply migration 004, deploy the function, and configure server-side Marketaux/Gemini keys to enable the providers. Missing keys produce setup messages rather than fabricated stories. See [architecture, deployment and MCP connection instructions](docs/news-mcp.md).
 
 ## Price alerts
 

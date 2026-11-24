@@ -19,10 +19,12 @@ import {
   FiChevronsLeft,
   FiChevronsRight,
   FiLink,
+  FiFileText,
 } from "react-icons/fi";
 const navigation = [
   ["Overview", "/dashboard", FiGrid],
   ["Markets", "/dashboard/markets", FiActivity],
+  ["News", "/dashboard/news", FiFileText],
   ["Journal", "/dashboard/journal", FiBookOpen],
   ["Calendar", "/dashboard/calendar", FiCalendar],
   ["Analytics", "/dashboard/statistics", FiBarChart2],

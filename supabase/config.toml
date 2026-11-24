@@ -13,3 +13,7 @@ enable_confirmations = false
 # The handler verifies the user's bearer token with Supabase Auth on EVERY request.
 # This accommodates projects using the new publishable keys/JWT signing keys.
 verify_jwt = false
+
+[functions.news-mcp]
+# Every request is authenticated with Supabase Auth inside the handler.
+verify_jwt = false

@@ -242,6 +242,203 @@ async function fixtures(page, { signedIn = true } = {}) {
   return rows;
 }
 
+async function newsFixture(
+  page,
+  { configured = true, failResearch = false } = {},
+) {
+  const article = {
+    id: "news-1",
+    title: "Central bank holds rates as markets assess inflation",
+    source: "Example Financial News",
+    url: "https://example.com/markets/rates",
+    description:
+      "Policymakers kept rates unchanged while outlining their outlook for inflation and economic growth.",
+    published_at: "2026-11-24T08:00:00Z",
+  };
+  const items = [];
+  const calls = [];
+  await page.route(
+    "https://journal-test.supabase.co/functions/v1/news-mcp/app",
+    async (route) => {
+      const { action, args } = route.request().postDataJSON();
+      calls.push({ action, args });
+      if (action === "status")
+        return route.fulfill({ json: { news: configured, ai: configured } });
+      if (action === "library") return route.fulfill({ json: { items } });
+      if (action === "feed")
+        return configured
+          ? route.fulfill({
+              json: {
+                articles: [
+                  article,
+                  {
+                    ...article,
+                    id: "news-2",
+                    title: "Gold traders look ahead to economic data",
+                  },
+                ],
+                fetchedAt: "2026-11-24T08:01:00Z",
+                cached: false,
+              },
+            })
+          : route.fulfill({
+              status: 503,
+              json: {
+                error:
+                  "The news feed needs a Marketaux API key configured on the server.",
+              },
+            });
+      if (action === "save" || action === "like") {
+        let row = items.find((i) => i.article_id === args.articleId);
+        if (!row) {
+          row = {
+            article_id: args.articleId,
+            article,
+            saved: false,
+            liked: false,
+          };
+          items.push(row);
+        }
+        row[action === "save" ? "saved" : "liked"] = args.value;
+        return route.fulfill({
+          json: { articleId: args.articleId, value: args.value },
+        });
+      }
+      if (action === "research" && failResearch)
+        return route.fulfill({
+          status: 502,
+          json: {
+            error:
+              "No verifiable web sources were returned. Try a more specific question.",
+          },
+        });
+      return route.fulfill({
+        json: {
+          answer:
+            action === "research"
+              ? "The official statement confirms unchanged rates."
+              : "The excerpt reports that rates were unchanged.",
+          sources: [{ title: "Original statement", url: article.url }],
+          researchedAt: "2026-11-24T08:02:00Z",
+          kind: action === "research" ? "web_research" : "excerpt_summary",
+        },
+      });
+    },
+  );
+  return { article, calls };
+}
+test("news saves and likes survive reload, summaries identify excerpts, and research includes sources", async ({
+  page,
+}) => {
+  await fixtures(page);
+  const { article, calls } = await newsFixture(page);
+  await page.goto("/dashboard/news");
+  await expect(
+    page.getByRole("heading", { name: "A wider perspective. A sharper edge." }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Save " + article.title, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Like " + article.title, exact: true })
+    .click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Saved", exact: false })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("heading", { name: article.title, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Like " + article.title, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "AI summary", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Based on the publisher excerpt; the full article was not read.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByLabel("What’s on your radar?")
+    .fill("What are the latest central bank updates?");
+  await page
+    .getByRole("button", { name: "Research the web", exact: true })
+    .click();
+  await expect(page.locator(".news-research .news-answer")).toContainText(
+    "official statement",
+  );
+  await expect(
+    page
+      .locator(".news-research")
+      .getByRole("link", { name: "Original statement", exact: false }),
+  ).toHaveAttribute("href", article.url);
+  expect(calls.some((c) => c.action === "research")).toBe(true);
+  await page
+    .getByRole("button", { name: "Save " + article.title, exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "A little less noise. A reading list of your own.",
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Discover", exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "test-results/news-desktop.png",
+    fullPage: true,
+  });
+});
+test("mobile news fits viewport, filters topics, and presents research errors honestly", async ({
+  page,
+}) => {
+  await fixtures(page);
+  const { calls } = await newsFixture(page, { failResearch: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard/news");
+  await page
+    .getByRole("button", { name: "Gold & metals", exact: true })
+    .click();
+  await expect
+    .poll(() => calls.filter((c) => c.action === "feed").at(-1)?.args.query)
+    .toBe("gold | silver");
+  await page.getByLabel("Search news", { exact: true }).fill("inflation");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect
+    .poll(() => calls.filter((c) => c.action === "feed").at(-1)?.args.query)
+    .toBe("inflation");
+  await page
+    .getByLabel("What’s on your radar?")
+    .fill("What happened today in gold?");
+  await page
+    .getByRole("button", { name: "Research the web", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "No verifiable web sources",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/news-mobile.png",
+    fullPage: true,
+  });
+});
+test("unconfigured news explains setup without displaying invented stories", async ({
+  page,
+}) => {
+  await fixtures(page);
+  await newsFixture(page, { configured: false });
+  await page.goto("/dashboard/news");
+  await expect(page.getByRole("alert")).toContainText("Marketaux API key");
+  await expect(page.locator(".news-card")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Research the web", exact: true }),
+  ).toBeDisabled();
+});
+
 async function brokerFixture(
   page,
   rows,
