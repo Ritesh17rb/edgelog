@@ -246,34 +246,34 @@ export function createNewsService({
     };
   }
   return {
-    status: () => ({ news: !!config.marketauxKey, ai: !!config.openaiKey }),
+    status: () => ({ news: !!config.newsApiKey, ai: !!config.openaiKey }),
     async search({ query = "", hours = 24 } = {}) {
       query = text(query, 200).trim();
       if (!Number.isInteger(hours) || hours < 1 || hours > 168)
         throw new NewsError("Choose a time range between 1 and 168 hours.");
-      if (!config.marketauxKey)
+      if (!config.newsApiKey)
         throw new NewsError(
-          "The news feed needs a Marketaux API key configured on the server.",
+          "The news feed needs a key from The News API configured on the server.",
           503,
           "news_not_configured",
         );
       const key =
-        "feed:" + (await hash(JSON.stringify([query.toLowerCase(), hours])));
+        "feed:thenewsapi:v1:" +
+        (await hash(JSON.stringify([query.toLowerCase(), hours])));
       const hit = await cached(key);
       if (hit) return { ...hit, cached: true };
       await budget("news:user:" + userId, 30);
       await budget("news:global", 80);
-      const url = new URL("https://api.marketaux.com/v1/news/all");
+      const url = new URL("https://api.thenewsapi.com/v1/news/all");
       Object.entries({
-        api_token: config.marketauxKey,
+        api_token: config.newsApiKey,
         language: "en",
         limit: config.newsLimit || 3,
-        group_similar: "true",
         published_after: new Date(now().getTime() - hours * 3600000)
           .toISOString()
           .slice(0, 19),
         sort: "published_at",
-        ...(query ? { search: query } : {}),
+        ...(query ? { search: query } : { categories: "business" }),
       }).forEach(([k, v]) => url.searchParams.set(k, String(v)));
       const result = await request(url);
       if (!Array.isArray(result.data))
@@ -287,7 +287,10 @@ export function createNewsService({
           result.data
             .map(normalizeArticle)
             .filter(Boolean)
-            .map((a) => [a.id, a]),
+            .map((a) => [
+              a.url,
+              { ...a, id: "thenewsapi:" + a.id.slice(0, 89) },
+            ]),
         ).values(),
       ];
       if (articles.length)

@@ -10,7 +10,7 @@ Deno.serve(
     admin,
     config: {
       appOrigin: Deno.env.get("NEWS_APP_ORIGIN") || Deno.env.get("APP_ORIGIN"),
-      marketauxKey: Deno.env.get("MARKETAUX_API_KEY"),
+      newsApiKey: Deno.env.get("THENEWSAPI_API_KEY"),
       openaiKey: Deno.env.get("OPENAI_API_KEY"),
       openaiModel: Deno.env.get("OPENAI_MODEL"),
       newsLimit: Math.min(

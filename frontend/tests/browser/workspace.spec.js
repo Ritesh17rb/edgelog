@@ -285,7 +285,7 @@ async function newsFixture(
               status: 503,
               json: {
                 error:
-                  "The news feed needs a Marketaux API key configured on the server.",
+                  "The news feed needs a key from The News API configured on the server.",
               },
             });
       if (action === "save" || action === "like") {
@@ -447,7 +447,7 @@ test("unconfigured news explains setup without displaying invented stories", asy
   await fixtures(page);
   await newsFixture(page, { configured: false });
   await page.goto("/dashboard/news");
-  await expect(page.getByRole("alert")).toContainText("Marketaux API key");
+  await expect(page.getByRole("alert")).toContainText("key from The News API");
   await expect(page.locator(".news-card")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Research the web", exact: true }),

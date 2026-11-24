@@ -107,7 +107,7 @@ function fixture() {
 }
 const config = {
   appOrigin: "https://app.example",
-  marketauxKey: "test-marketaux",
+  newsApiKey: "test-news-api",
   openaiKey: "test-openai",
 };
 test("normalization rejects unsafe URLs, bad dates and strips markup", () => {
@@ -171,6 +171,10 @@ test("news fetch uses provider filters, caches across users and excludes unsafe 
   let calls = 0;
   const fetcher = async (url) => {
     calls++;
+    assert.equal(url.origin, "https://api.thenewsapi.com");
+    assert.equal(url.pathname, "/v1/news/all");
+    assert.equal(url.searchParams.get("api_token"), "test-news-api");
+    assert.equal(url.searchParams.has("group_similar"), false);
     assert.equal(url.searchParams.get("limit"), "3");
     assert.equal(url.searchParams.get("search"), "gold");
     assert.ok(url.searchParams.has("published_after"));
@@ -188,9 +192,29 @@ test("news fetch uses provider filters, caches across users and excludes unsafe 
   assert.equal((await bob.search({ query: "gold" })).cached, true);
   assert.equal(calls, 1);
   assert.equal(rows.news_articles.length, 1);
+  assert.equal(rows.news_articles[0].id, "thenewsapi:article-1");
   await assert.rejects(
     () => callAppTool(alice, "search_news", { hours: 999 }),
     (e) => e.status === 400,
+  );
+});
+test("default feed requests business news on the free endpoint and rejects malformed responses", async () => {
+  const { admin } = fixture();
+  const service = createNewsService({
+    admin,
+    config,
+    userId: "alice",
+    fetcher: async (url) => {
+      assert.equal(url.pathname, "/v1/news/all");
+      assert.equal(url.searchParams.get("categories"), "business");
+      assert.equal(url.searchParams.has("search"), false);
+      assert.equal(url.searchParams.get("limit"), "3");
+      return Response.json({ data: { unexpected: "shape" } });
+    },
+  });
+  await assert.rejects(
+    () => service.search(),
+    (e) => e.code === "provider_response",
   );
 });
 test("MCP save and like preserve one another and isolate user libraries", async () => {
