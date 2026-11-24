@@ -292,8 +292,9 @@ export default function News() {
         <div className="news-card-body">
           <div className="news-card-meta">
             <span>{article.source}</span>
-            <time dateTime={article.published_at}>
-              {date(article.published_at)}
+            <time dateTime={article.published_at || article.indexed_at}>
+              {!article.published_at && article.indexed_at ? "Indexed " : ""}
+              {date(article.published_at || article.indexed_at)}
             </time>
           </div>
           <h2>
@@ -313,10 +314,28 @@ export default function News() {
               type="button"
               className="news-summary-button"
               disabled={busy[article.id + "summary"] || status?.ai === false}
-              onClick={() => summarize(article)}
+              onClick={() => {
+                if (article.description?.trim()) return summarize(article);
+                setQuestion(
+                  (
+                    "Research the latest context for this headline: " +
+                    article.title +
+                    ". Publisher: " +
+                    article.source +
+                    ". Original URL: " +
+                    article.url
+                  ).slice(0, 1200),
+                );
+                researchInput.current?.focus();
+                researchInput.current?.scrollIntoView({ block: "center" });
+              }}
             >
               <FiZap aria-hidden="true" />
-              {busy[article.id + "summary"] ? "Summarising…" : "AI summary"}
+              {busy[article.id + "summary"]
+                ? "Summarising…"
+                : article.description?.trim()
+                  ? "AI summary"
+                  : "Research story"}
             </button>
             <div>
               <button
@@ -539,8 +558,17 @@ export default function News() {
             </div>
           )}
           <p className="news-feed-footnote">
-            Stories link to their original publishers. Publication times use
-            your device timezone.
+            Stories link to their original publishers. Times use your device
+            timezone. GDELT times show when a story was indexed. News discovery
+            by{" "}
+            <a
+              href="https://www.gdeltproject.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GDELT
+            </a>
+            .
           </p>
         </section>
         <aside className="news-research" aria-label="AI research desk">

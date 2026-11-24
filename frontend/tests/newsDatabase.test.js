@@ -16,6 +16,29 @@ test("news database isolates reading lists and protects cache, budgets and provi
         "utf8",
       ),
     );
+    await pg.exec(
+      await readFile(
+        new URL("../../supabase/migrations/005_gdelt.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+    const slots = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        pg.query("select news_acquire_gdelt_slot() as allowed"),
+      ),
+    );
+    assert.equal(slots.filter((result) => result.rows[0].allowed).length, 1);
+    await pg.exec(
+      "update news_cache set expires_at=now()-interval '1 second' where key='gdelt:request-lease'",
+    );
+    assert.equal(
+      (await pg.query("select news_acquire_gdelt_slot() as allowed")).rows[0]
+        .allowed,
+      true,
+    );
+    await pg.exec(
+      "insert into news_articles(id,title,url,source,published_at,indexed_at) values('gdelt-test','Indexed headline','https://example.com/indexed','Example',null,now())",
+    );
     await pg.query("insert into auth.users values($1),($2)", [alice, bob]);
     await pg.exec(
       "insert into news_articles(id,title,url,source,published_at) values('story','Title','https://example.com/story','Example',now())",
@@ -39,6 +62,7 @@ test("news database isolates reading lists and protects cache, budgets and provi
     );
     await assert.rejects(() => pg.query("select * from news_cache"));
     await assert.rejects(() => pg.query("select * from news_budgets"));
+    await assert.rejects(() => pg.query("select news_acquire_gdelt_slot()"));
     await assert.rejects(() =>
       pg.query("select news_consume_budget('ai:global',100)"),
     );

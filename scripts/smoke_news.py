@@ -1,13 +1,14 @@
 """Verify deployed news/MCP using a temporary Auth user, then delete it.
 
 Needs the already authenticated Supabase CLI. Credentials remain in process memory.
-No provider requests are made and no journal data is written.
+No AI calls or journal writes are made. --feed checks live GDELT discovery.
 """
 import json
 import subprocess
 import urllib.request
 import urllib.error
 import uuid
+import sys
 
 PROJECT = "rqeyaamvnwjiucbstzqq"
 BASE = f"https://{PROJECT}.supabase.co"
@@ -54,9 +55,20 @@ def main():
         req = urllib.request.Request(BASE + path, data=json.dumps(body).encode() if body is not None else None,
             headers={"Content-Type": "application/json", "apikey": key, "Authorization": "Bearer " + (token or key),
                      "Accept": "application/json, text/event-stream", "Origin": APP_ORIGIN}, method=method)
-        with urllib.request.urlopen(req, timeout=60) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else None
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                raw = response.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as error:
+            print('Live request failed: '+path.split('?')[0]+' HTTP '+str(error.code))
+            if path.startswith('/functions/'):
+                try:
+                    detail=json.load(error)
+                    print('Service error code: '+str(detail.get('code','unavailable')))
+                    print('Service message: '+str(detail.get('error','Unavailable')))
+                except (ValueError,TypeError):
+                    pass
+            raise
 
     user_id = None
     try:
@@ -74,6 +86,13 @@ def main():
         assert protocol["result"]["serverInfo"]["name"] == "edgelog-news"
         tools = request("/functions/v1/news-mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, token)
         assert len(tools["result"]["tools"]) == 7
+        if '--feed' in sys.argv:
+            feed = request('/functions/v1/news-mcp/app', {'action':'feed','args':{'query':'gold','hours':24}},token)
+            assert isinstance(feed.get('articles'),list)
+            for article in feed['articles']:
+                assert article['id'].startswith('gdelt:') and article['published_at'] is None and article['indexed_at']
+                assert not article['description']
+            print('Live GDELT feed through authenticated MCP: passed; articles='+str(len(feed['articles'])))
         print("Live authenticated MCP initialization, seven-tool discovery and empty private library: passed.")
         print("Provider configuration: " + json.dumps(status))
     finally:

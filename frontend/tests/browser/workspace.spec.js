@@ -244,7 +244,7 @@ async function fixtures(page, { signedIn = true } = {}) {
 
 async function newsFixture(
   page,
-  { configured = true, failResearch = false } = {},
+  { configured = true, failResearch = false, headlineOnly = false } = {},
 ) {
   const article = {
     id: "news-1",
@@ -256,6 +256,11 @@ async function newsFixture(
     published_at: "2026-11-24T08:00:00Z",
   };
   const items = [];
+  if (headlineOnly) {
+    article.description = "";
+    article.published_at = null;
+    article.indexed_at = "2026-11-24T08:00:00Z";
+  }
   const calls = [];
   await page.route(
     "https://journal-test.supabase.co/functions/v1/news-mcp/app",
@@ -263,7 +268,9 @@ async function newsFixture(
       const { action, args } = route.request().postDataJSON();
       calls.push({ action, args });
       if (action === "status")
-        return route.fulfill({ json: { news: configured, ai: configured } });
+        return route.fulfill({
+          json: { news: true, ai: true, provider: "gdelt" },
+        });
       if (action === "library") return route.fulfill({ json: { items } });
       if (action === "feed")
         return configured
@@ -284,8 +291,7 @@ async function newsFixture(
           : route.fulfill({
               status: 503,
               json: {
-                error:
-                  "The news feed needs a key from The News API configured on the server.",
+                error: "GDELT is temporarily unavailable. Please retry.",
               },
             });
       if (action === "save" || action === "like") {
@@ -441,17 +447,56 @@ test("mobile news fits viewport, filters topics, and presents research errors ho
     fullPage: true,
   });
 });
-test("unconfigured news explains setup without displaying invented stories", async ({
+test("news outages show a retry without invented stories and leave research available", async ({
   page,
 }) => {
   await fixtures(page);
   await newsFixture(page, { configured: false });
   await page.goto("/dashboard/news");
-  await expect(page.getByRole("alert")).toContainText("key from The News API");
+  await expect(page.getByRole("alert")).toContainText(
+    "GDELT is temporarily unavailable",
+  );
   await expect(page.locator(".news-card")).toHaveCount(0);
+  await page
+    .getByLabel("What’s on your radar?")
+    .fill("Latest gold market context");
   await expect(
     page.getByRole("button", { name: "Research the web", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
+});
+test("GDELT headlines label indexing dates and prepare research without automatically spending credits", async ({
+  page,
+}) => {
+  await fixtures(page);
+  const { calls } = await newsFixture(page, { headlineOnly: true });
+  await page.goto("/dashboard/news");
+  await expect(
+    page.locator(".news-card").first().locator("time"),
+  ).toContainText("Indexed");
+  await expect(
+    page.getByRole("button", { name: "AI summary", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Research story", exact: true })
+    .first()
+    .click();
+  await expect(page.getByLabel("What’s on your radar?")).toHaveValue(
+    /Research the latest context for this headline/,
+  );
+  expect(
+    calls.some(
+      (call) => call.action === "research" || call.action === "summarize",
+    ),
+  ).toBe(false);
+  await expect(
+    page.getByRole("link", { name: "GDELT", exact: true }),
+  ).toHaveAttribute("href", "https://www.gdeltproject.org/");
+  await page
+    .getByRole("button", { name: "Research the web", exact: true })
+    .click();
+  await expect(page.locator(".news-research .news-answer")).toContainText(
+    "official statement",
+  );
 });
 
 async function brokerFixture(

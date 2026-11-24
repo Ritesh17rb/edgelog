@@ -7,6 +7,8 @@ import {
   createNewsService,
   normalizeArticle,
   parseOpenAIResponse,
+  gdeltQuery,
+  normalizeGdeltArticle,
 } from "../service.js";
 import { callAppTool } from "../mcp.js";
 
@@ -17,6 +19,13 @@ const article = {
   source: "Example Publisher",
   description: "The bank kept rates unchanged.",
   published_at: "2026-11-24T08:00:00Z",
+};
+const gdeltArticle = {
+  url: article.url,
+  title: article.title,
+  domain: article.source,
+  socialimage: "https://publisher.example/image.jpg",
+  seendate: "20261124T080000Z",
 };
 function fixture() {
   const rows = { news_articles: [], news_cache: [], news_library: [] },
@@ -29,6 +38,7 @@ function fixture() {
       }),
     },
     rpc: async (name, p) => {
+      if (name === "news_acquire_gdelt_slot") return { data: true };
       if (name === "news_consume_budget") {
         const count = budgets.get(p.p_bucket) || 0;
         if (count >= p.p_limit) return { data: false };
@@ -107,7 +117,6 @@ function fixture() {
 }
 const config = {
   appOrigin: "https://app.example",
-  newsApiKey: "test-news-api",
   openaiKey: "test-openai",
 };
 test("normalization rejects unsafe URLs, bad dates and strips markup", () => {
@@ -171,15 +180,20 @@ test("news fetch uses provider filters, caches across users and excludes unsafe 
   let calls = 0;
   const fetcher = async (url) => {
     calls++;
-    assert.equal(url.origin, "https://api.thenewsapi.com");
-    assert.equal(url.pathname, "/v1/news/all");
-    assert.equal(url.searchParams.get("api_token"), "test-news-api");
-    assert.equal(url.searchParams.has("group_similar"), false);
-    assert.equal(url.searchParams.get("limit"), "3");
-    assert.equal(url.searchParams.get("search"), "gold");
-    assert.ok(url.searchParams.has("published_after"));
+    assert.equal(url.origin, "https://api.gdeltproject.org");
+    assert.equal(url.pathname, "/api/v2/doc/doc");
+    assert.equal(url.searchParams.has("api_token"), false);
+    assert.equal(url.searchParams.get("maxrecords"), "20");
+    assert.equal(url.searchParams.get("query"), "gold sourcelang:english");
+    assert.equal(url.searchParams.get("timespan"), "24h");
+    assert.equal(url.searchParams.get("sort"), "DateDesc");
     return Response.json({
-      data: [article, { ...article, uuid: "bad", url: "javascript:alert(1)" }],
+      articles: [
+        gdeltArticle,
+        { ...gdeltArticle },
+        null,
+        { ...gdeltArticle, url: "javascript:alert(1)" },
+      ],
     });
   };
   const alice = createNewsService({ admin, config, userId: "alice", fetcher });
@@ -192,23 +206,24 @@ test("news fetch uses provider filters, caches across users and excludes unsafe 
   assert.equal((await bob.search({ query: "gold" })).cached, true);
   assert.equal(calls, 1);
   assert.equal(rows.news_articles.length, 1);
-  assert.equal(rows.news_articles[0].id, "thenewsapi:article-1");
+  assert.match(rows.news_articles[0].id, /^gdelt:[a-f0-9]{64}$/);
+  assert.equal(rows.news_articles[0].published_at, null);
+  assert.equal(rows.news_articles[0].indexed_at, "2026-11-24T08:00:00.000Z");
   await assert.rejects(
     () => callAppTool(alice, "search_news", { hours: 999 }),
     (e) => e.status === 400,
   );
 });
-test("default feed requests business news on the free endpoint and rejects malformed responses", async () => {
+test("default feed searches financial topics without keys and rejects malformed responses", async () => {
   const { admin } = fixture();
   const service = createNewsService({
     admin,
     config,
     userId: "alice",
     fetcher: async (url) => {
-      assert.equal(url.pathname, "/v1/news/all");
-      assert.equal(url.searchParams.get("categories"), "business");
-      assert.equal(url.searchParams.has("search"), false);
-      assert.equal(url.searchParams.get("limit"), "3");
+      assert.equal(url.pathname, "/api/v2/doc/doc");
+      assert.ok(url.searchParams.get("query").includes('"stock market"'));
+      assert.equal(url.searchParams.get("format"), "json");
       return Response.json({ data: { unexpected: "shape" } });
     },
   });
@@ -216,6 +231,66 @@ test("default feed requests business news on the free endpoint and rejects malfo
     () => service.search(),
     (e) => e.code === "provider_response",
   );
+});
+test("configured relay receives only public search parameters and its own internal token", async () => {
+  const { admin } = fixture();
+  const service = createNewsService({
+    admin,
+    config: {
+      ...config,
+      newsRelayUrl: "https://app.example/api/gdelt",
+      newsRelayToken: "test-relay",
+    },
+    userId: "alice",
+    fetcher: async (url, options) => {
+      assert.equal(url, "https://app.example/api/gdelt");
+      assert.equal(options.headers.Authorization, "Bearer test-relay");
+      assert.deepEqual(JSON.parse(options.body), {
+        query: "gold sourcelang:english",
+        hours: 24,
+        limit: 20,
+      });
+      assert.equal(options.body.includes(config.openaiKey), false);
+      return Response.json({ articles: [gdeltArticle] });
+    },
+  });
+  assert.equal((await service.search({ query: "gold" })).articles.length, 1);
+});
+test("GDELT query translation and indexing dates preserve meaning without inventing excerpts", async () => {
+  assert.equal(
+    gdeltQuery("gold | silver"),
+    "(gold OR silver) sourcelang:english",
+  );
+  assert.equal(gdeltQuery("central bank"), '"central bank" sourcelang:english');
+  assert.throws(
+    () => gdeltQuery("ab"),
+    (e) => e.status === 400,
+  );
+  assert.equal(
+    await normalizeGdeltArticle({
+      ...gdeltArticle,
+      seendate: "20260230T000000Z",
+    }),
+    null,
+  );
+  const row = await normalizeGdeltArticle(gdeltArticle);
+  assert.equal(row.description, "");
+  assert.equal(row.published_at, null);
+  const { admin, rows } = fixture();
+  rows.news_articles.push(row);
+  const service = createNewsService({
+    admin,
+    config,
+    userId: "alice",
+    fetcher: () => {
+      throw new Error("No AI call should occur");
+    },
+  });
+  await assert.rejects(
+    () => service.summarize({ articleId: row.id }),
+    (e) => e.code === "no_excerpt",
+  );
+  assert.equal(service.status().news, true);
 });
 test("MCP save and like preserve one another and isolate user libraries", async () => {
   const { admin, rows } = fixture();
@@ -478,10 +553,7 @@ test("response parsing rejects incomplete, refused, unsafe and unsearched answer
 test("missing keys, provider errors and blocked AI do not produce fabricated news", async () => {
   const { admin } = fixture();
   const empty = createNewsService({ admin, config: {}, userId: "alice" });
-  await assert.rejects(
-    () => empty.search(),
-    (e) => e.code === "news_not_configured",
-  );
+  assert.equal(empty.status().news, true);
   await assert.rejects(
     () => empty.research({ query: "Gold news today" }),
     (e) => e.code === "ai_not_configured",
